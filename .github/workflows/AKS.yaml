@@ -43,7 +43,7 @@ env:
 jobs:
   deploy_aks:
     name: 'deploy_aks'
-    runs-on: ['self-hosted','infrastructure']  
+    runs-on: ubuntu-latest  
     defaults:
       run:
         shell: bash

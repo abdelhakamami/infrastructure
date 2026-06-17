@@ -42,7 +42,7 @@ env:
 jobs:
   deploy_vnet:
     name: 'deploy_vnet'
-    runs-on: ['self-hosted','infrastructure']  
+    runs-on: ubuntu-latest  
     defaults:
       run:
         shell: bash

@@ -33,7 +33,7 @@ env:
 jobs:
   deploy_rg:
     name: 'Terraform init-plan-apply-for-resource-groupe'
-    runs-on: ['self-hosted','infrastructure'] 
+    runs-on: ubuntu-latest 
     defaults:
       run:
         shell: bash

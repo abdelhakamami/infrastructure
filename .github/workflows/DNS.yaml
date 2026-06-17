@@ -63,7 +63,7 @@ env:
 jobs:
   deploy_dns:
     name: 'deploy_dns'
-    runs-on: ['self-hosted','infrastructure']
+    runs-on: ubuntu-latest
     defaults:
       run:
         shell: bash

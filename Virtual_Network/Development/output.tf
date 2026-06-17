@@ -1,6 +1,3 @@
-output "resource_group_name" {
-  value = data.terraform_remote_state.resource_group_state.outputs.resource_group_name
-}
 output "vnet_id" {
   description = "The ID of the Virtual Network"
   value       = azurerm_virtual_network.vnet.id

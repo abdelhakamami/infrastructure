@@ -1,0 +1,107 @@
+name: Storage Account
+on:
+  push:
+    branches:
+      - dev
+      - prod
+      - staging
+    paths:
+      - 'Storage_Account/**'
+  workflow_dispatch:
+    inputs: 
+      string:
+        description: Creation for the network infrastructure
+        type: string
+        required: true
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+    
+env:
+  
+  ARM_SUBSCRIPTION_ID: "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+  ARM_TENANT_ID: "${{ secrets.AZURE_TENANT_ID }}"
+  AZURE_USERNAME: "${{ secrets.AZURE_USERNAME }}"
+  AZURE_PASSWORD: "${{ secrets.AZURE_PASSWORD }}"
+
+jobs:
+  terraform-init-plan-apply-for-infra-network:
+    name: 'Terraform init-plan-apply-for-infra-network'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./Storage_Account
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+      
+      - name: Set environment folder based on branch
+        id: set_env_folder
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
+            ENV_FOLDER="Development"
+          elif [[ "${{ github.ref }}" == "refs/heads/staging" ]]; then
+            ENV_FOLDER="Staging"
+          elif [[ "${{ github.ref }}" == "refs/heads/prod" ]]; then
+            ENV_FOLDER="Production"
+          else
+            echo "Branch not recognized"
+            exit 1
+          fi
+          echo "ENV_FOLDER=$ENV_FOLDER" >> $GITHUB_ENV
+
+      - name: Download Terraform
+        run: |
+          wget https://releases.hashicorp.com/terraform/1.5.4/terraform_1.5.4_linux_amd64.zip
+          unzip terraform_1.5.4_linux_amd64.zip
+          sudo mv terraform /usr/local/bin/
+
+      - name: Azure CLI script
+        uses: pietrobolcato/install-azure-cli-action@main
+
+      - name: Azure Login
+        run: az login -u ${{env.AZURE_USERNAME}} -p ${{env.AZURE_PASSWORD}}
+  
+      - name: Terraform Init
+        run: |
+          export AZURE_SUBSCRIPTION_ID=$ARM_SUBSCRIPTION_ID
+          cd ${{ env.ENV_FOLDER }}
+          terraform init
+
+      - name: Validate
+        run: |
+          cd ${{ env.ENV_FOLDER }}
+          terraform validate
+
+      - name: Set Storage account name
+        id: set_storageaccount_name
+        run: |
+          ENV_NAME=${GITHUB_REF##*/}
+          if [[ "$ENV_NAME" == "dev" || "$ENV_NAME" == "prod" || "$ENV_NAME" == "staging"  ]]; then
+            echo "storage_account_name=${ENV_NAME}storingavaxia" >> $GITHUB_ENV
+          else
+            echo "storage_account_name=storingavaxia" >> $GITHUB_ENV
+          fi
+
+      - name: Terraform Plan
+        run: |
+            cd ${{ env.ENV_FOLDER }}
+            terraform  plan  -var "AZURE_SUBSCRIPTION_ID=$ARM_SUBSCRIPTION_ID"  -var "storage_account_name=${{ env.storage_account_name }}"
+
+      - name: Terraform Apply
+        run: |
+          cd ${{ env.ENV_FOLDER }}
+          terraform apply -auto-approve  -var "AZURE_SUBSCRIPTION_ID=$ARM_SUBSCRIPTION_ID"  -var "storage_account_name=${{ env.storage_account_name }}"
+        
+      - name: Terraform output
+        run: |
+          cd ${{ env.ENV_FOLDER }}
+          terraform output 

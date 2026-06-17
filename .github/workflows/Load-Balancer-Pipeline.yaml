@@ -1,0 +1,106 @@
+name: Load-Balancer
+on:
+  push:
+    branches:
+      - dev
+      - prod
+      - staging
+    paths:
+      - 'Network/LoadBalancer/**'
+  workflow_dispatch:
+    inputs: 
+      string:
+        description: Creation for the Load-balancer
+        type: string
+        required: true
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+    
+env:
+  
+  ARM_SUBSCRIPTION_ID: "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+  ARM_TENANT_ID: "${{ secrets.AZURE_TENANT_ID }}"
+  AZURE_USERNAME: "${{ secrets.AZURE_USERNAME }}"
+  AZURE_PASSWORD: "${{ secrets.AZURE_PASSWORD }}"
+
+jobs:
+  terraform-init-plan-apply-for-Load-balancer:
+    name: 'Terraform init-plan-apply-for-Load-balancer'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./Network/LoadBalancer
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+      
+      - name: Set environment folder based on branch
+        id: set_env_folder
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
+            ENV_FOLDER="Development"
+          elif [[ "${{ github.ref }}" == "refs/heads/staging" ]]; then
+            ENV_FOLDER="Staging"
+          elif [[ "${{ github.ref }}" == "refs/heads/prod" ]]; then
+            ENV_FOLDER="Production"
+          else
+            echo "Branch not recognized"
+            exit 1
+          fi
+          echo "ENV_FOLDER=$ENV_FOLDER" >> $GITHUB_ENV
+
+      - name: Download Terraform
+        run: |
+          wget https://releases.hashicorp.com/terraform/1.5.4/terraform_1.5.4_linux_amd64.zip
+          unzip terraform_1.5.4_linux_amd64.zip
+          sudo mv terraform /usr/local/bin/
+
+      - name: Azure CLI script
+        uses: pietrobolcato/install-azure-cli-action@main
+
+      - name: Azure Login
+        run: az login -u ${{env.AZURE_USERNAME}} -p ${{env.AZURE_PASSWORD}}
+  
+      - name: Terraform Init
+        run: |
+          export AZURE_SUBSCRIPTION_ID=$ARM_SUBSCRIPTION_ID
+          cd ${{ env.ENV_FOLDER }}
+          terraform init
+      - name: Terraform Validate
+        run: |
+          cd ${{ env.ENV_FOLDER }}
+          terraform validate
+
+      - name: Set LoadBalancer Name
+        id: set_lb_name
+        run: |
+          ENV_NAME=${GITHUB_REF##*/}
+          if [[ "$ENV_NAME" == "dev" || "$ENV_NAME" == "prod" || "$ENV_NAME" == "staging" ]]; then
+            echo "azurerm_lb_name=Loadbalancer-$ENV_NAME" >> $GITHUB_ENV
+          else
+            echo "azurerm_lb_name=Loadbalancer" >> $GITHUB_ENV
+          fi
+
+      - name: Terraform Plan
+        run: |
+            cd ${{ env.ENV_FOLDER }}
+            terraform  plan -var "AZURE_SUBSCRIPTION_ID=$ARM_SUBSCRIPTION_ID"  -var "azurerm_lb_name=${{ env.azurerm_lb_name }}"
+
+      - name: Terraform Apply
+        run: |
+          cd ${{ env.ENV_FOLDER }}
+          terraform apply -auto-approve -var "AZURE_SUBSCRIPTION_ID=$ARM_SUBSCRIPTION_ID"  -var "azurerm_lb_name=${{ env.azurerm_lb_name }}"
+        
+      - name: Terraform output
+        run: |
+          cd ${{ env.ENV_FOLDER }}
+          terraform output 

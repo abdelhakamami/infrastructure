@@ -1,0 +1,125 @@
+name: Cluster
+on:
+  push:
+    branches:
+      - dev
+      - prod
+      - staging
+    paths:
+      - 'Clusters/**'
+  workflow_dispatch:         
+    inputs:
+      aks_storage_account_rg_name:
+        description: rg name for aks tf state storage account  
+        type: string
+        required: true
+      aks_storage_account_name:
+        description: aks tf state storage account name 
+        type: string
+        required: true
+      aks_storage_account_container_name:
+        description: aks tf state storage account container name 
+        type: string
+        required: true
+      aks_storage_account_key:
+        description: aks tfstate filename 
+        type: string
+        required: true     
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+    
+env:
+  ARM_SUBSCRIPTION_ID: "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+  ARM_TENANT_ID: "${{ secrets.AZURE_TENANT_ID }}"
+  ARM_CLIENT_ID: "${{ secrets.AZURE_CLIENT_ID }}"
+  ARM_CLIENT_SECRET: "${{ secrets.AZURE_CLIENT_SECRET }}"
+
+jobs:
+  deploy_aks:
+    name: 'deploy_aks'
+    runs-on: ['self-hosted','infrastructure']  
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./Clusters
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+      
+      - name: Set environment folder based on branch
+        id: set_env_folder
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
+            ENV_FOLDER="Development"
+          elif [[ "${{ github.ref }}" == "refs/heads/staging" ]]; then
+            ENV_FOLDER="Staging"
+          elif [[ "${{ github.ref }}" == "refs/heads/prod" ]]; then
+            ENV_FOLDER="Production"
+          else
+            echo "Branch not recognized"
+            exit 1
+          fi
+          echo "ENV_FOLDER=$ENV_FOLDER" >> $GITHUB_ENV
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.4
+
+      - name: Azure CLI script
+        uses: pietrobolcato/install-azure-cli-action@main
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'    
+      - name: Terraform Init
+        run: |
+          cd ${{ env.ENV_FOLDER }}
+          terraform init -backend-config="subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+                         -backend-config="tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
+                         -backend-config="client_id=${{ secrets.AZURE_CLIENT_ID }}" \
+                         -backend-config="resource_group_name=${{ inputs.aks_storage_account_rg_name }}" \
+                         -backend-config="storage_account_name=${{ inputs.aks_storage_account_name }}" \
+                         -backend-config="container_name=${{ inputs.aks_storage_account_container_name }}" \
+                         -backend-config="key=${{ inputs.aks_storage_account_key }}" \
+                         -backend-config="client_secret=${{ secrets.AZURE_CLIENT_SECRET }}"
+
+      - name: Validate
+        run: |
+          cd ${{ env.ENV_FOLDER }}
+          terraform validate 
+
+
+      - name: Terraform Plan
+        run: |
+          terraform -chdir=${{ env.ENV_FOLDER }} plan \
+            -var "AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+            -var "tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
+            -var "client_id=${{ secrets.AZURE_CLIENT_ID }}" \
+            -var "client_secret=${{ secrets.AZURE_CLIENT_SECRET }}" \
+            -var-file="aks.tfvars" -lock=false 
+            
+      - name: Terraform Apply
+        run: |
+          terraform -chdir=${{ env.ENV_FOLDER }} apply -auto-approve  -var "AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+                                                                      -var "tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
+                                                                      -var "client_id=${{ secrets.AZURE_CLIENT_ID }}" \
+                                                                      -var "client_secret=${{ secrets.AZURE_CLIENT_SECRET }}" \
+                                                                      -var-file="aks.tfvars" -lock=false  
+      - name: Terraform output
+        run: |
+          cd ${{ env.ENV_FOLDER }}
+          terraform output 

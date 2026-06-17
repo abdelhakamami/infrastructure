@@ -20,18 +20,7 @@ variable "environment" {
   type = string
   default = "Staging" 
 }
-variable "rg_tf_state_rg_name" {
-  type        = string
-}
-variable "rg_tf_state_storage_account_name" {
-  type        = string
-}
-variable "rg_tf_state_container_name" {
-  type        = string
-}
-variable "rg_tf_state_key" {
-  type        = string
-}
+
 variable "vnet_name" {
   type = string
 }
